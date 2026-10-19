@@ -31,3 +31,5 @@ When a **Pull Request** is created, an automated workflow will:
 * Detect any modifications to `.tex` files.
 * Automatically compile the updated LaTeX files into PDFs.
 * Post a comment on the Pull Request with a direct link to preview the rendered documents.
+
+You can find an example pull request [here](https://github.com/piuswa/exercise-template/pull/1).
