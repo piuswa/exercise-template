@@ -1,0 +1,104 @@
+name: Compile Changed LaTeX
+
+on:
+  pull_request:
+    paths:
+      - '**/*.tex'
+
+jobs:
+  build_and_comment:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # Required to create/push to the isolated bot branch
+      pull-requests: write  # Required to post the comment
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed .tex files
+        id: changed-files
+        uses: tj-actions/changed-files@v44
+        with:
+          files: '**/*.tex'
+
+      - name: Compile LaTeX files
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          # Create temporary directories outside the repo to hold the PDFs safely
+          mkdir -p /tmp/compiled_pdfs
+          > /tmp/pdf_list.txt
+          
+          for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
+            echo "Compiling $file..."
+            dir=$(dirname "$file")
+            base=$(basename "$file")
+            
+            # Compile PDF
+            docker run --rm -v "$PWD/$dir:/workdir" -w /workdir texlive/texlive:latest latexmk -pdf -interaction=nonstopmode "$base"
+            
+            pdf_file="${file%.tex}.pdf"
+            
+            # Recreate the exact folder structure in our temp directory to prevent naming collisions
+            mkdir -p "/tmp/compiled_pdfs/$dir"
+            cp "$pdf_file" "/tmp/compiled_pdfs/$pdf_file"
+            
+            # Save the relative file path for the comment
+            echo "$pdf_file" >> /tmp/pdf_list.txt
+          done
+
+      - name: Push PDFs to isolated bot branch
+        if: steps.changed-files.outputs.any_changed == 'true'
+        env:
+          PR_NUM: ${{ github.event.pull_request.number }}
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Create an orphan (blank) branch specifically for this PR's PDFs
+          git checkout --orphan "bot/pdfs-pr-$PR_NUM"
+          
+          # Wipe all of the main repository files from this branch
+          git rm -rf . || true
+          git clean -fdx
+          
+          # Copy only the compiled PDFs back into the root of this empty branch
+          cp -r /tmp/compiled_pdfs/* .
+          
+          # Force add to bypass the repository's .gitignore rules (which block *.pdf)
+          git add --force .
+          git commit -m "Compiled PDFs for PR $PR_NUM"
+          
+          # Force push overwrites this branch with the newest versions every time a commit is made
+          git push --force origin "bot/pdfs-pr-$PR_NUM"
+
+      - name: Comment on PR with direct links
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            if (!fs.existsSync('/tmp/pdf_list.txt')) return;
+            
+            const pdfs = fs.readFileSync('/tmp/pdf_list.txt', 'utf8').split('\n').filter(Boolean);
+            
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pr_num = context.issue.number;
+            
+            // Build direct raw links targeting the hidden bot branch
+            const links = pdfs.map(pdf => {
+              const url = `https://github.com/${owner}/${repo}/raw/bot/pdfs-pr-${pr_num}/${pdf}`;
+              return `- 📥 **[Download ${pdf}](${url})**`;
+            }).join('\n');
+            
+            const body = `✅ **LaTeX Compilation Successful**\n\n${links}`;
+            
+            github.rest.issues.createComment({
+              owner: owner,
+              repo: repo,
+              issue_number: pr_num,
+              body: body
+            });
