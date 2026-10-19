@@ -16,6 +16,13 @@ To set up a new homework exercise, follow these steps:
 
 Once these steps are complete, your template is ready and you can begin writing the exercise.
 
+## ✍️ Structuring Your Document
+
+The template includes a custom command to easily generate properly numbered exercise sections:
+
+* Use the `\exsection` command in your document body whenever you need to start a new exercise part.
+* This command automatically increments an internal counter and creates a section header formatted as **Exercise X.Y** (where `X` is your assigned `\homeworkNumber` and `Y` is the automatically tracked part number).
+
 ## ⚙️ Automated Workflows
 
 This repository uses GitHub Actions to streamline the review process.
